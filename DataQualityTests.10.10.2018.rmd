@@ -1,0 +1,266 @@
+---
+title: "FY18 DQ"
+author: "CRG"
+date: "October 5, 2018"
+output: html_document
+---
+```{r}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+
+## Read in data
+sf <- read.csv("C:/Users/cguedenet/OneDrive - International Research and Exchanges Board/IREX Global Measurement/FY18.Q4/sfdata10.5.csv", header = TRUE)   # indicator results
+
+proj <- read.csv("active.proj.csv")            # active projects
+list2 <- c("code","program","practice.area")
+names(proj) <- list2
+proj <- proj[1:3]
+
+#rename column headings
+list<-c("program", "country","FY","period","indNum", "indName","indDis","indDisValue","timing","results","comments")
+names(sf)<-list
+
+#remove all data with empty cells
+sf<-sf %>% filter(program!="" & results>0)
+
+#join active programs data frane to indicator results data frame
+sf <- left_join(sf,proj,by="program") # add variables from proj data frame to sf data frame
+
+write.csv(sf,"sfpower.csv")
+```
+
+## number of programs per practice area
+```{r}
+programsPrac <- sf17 %>% group_by(practice.area) %>% summarize(Number = n_distinct(program)) %>% arrange(desc(Number))
+
+```
+
+## number and percentage of programs reporting on each indicator
+```{r}
+NumberofPrograms<-sf17 %>% filter(indDis=="a. Country" & indDisValue == "a. Total" ) %>% select(program, practice.area, indName, results) %>% group_by(practice.area,indName) %>% summarize(Number = n_distinct(program)) %>% spread(practice.area, Number) %>% mutate(CG.12 = round(`Communities and Governance`/12,2), Ed.11 = round(Education/11,2), IM.19 = round(`Information and Media`/19,2), leader.8 = round(Leadership/8,2), youth.2 = round(Youth/8,2)) %>% select(1,2,7,3,8,4,9,5,10,6,11)
+
+```
+
+##indicator results per project/indicator & by country
+```{r}
+## indicator results per project/indicator & by country. Indicators across columns (wide format)
+indicatorResults3<-sf17 %>% filter(indDis=="a. Country" & indDisValue=="a. Total") %>%
+  select(program, country,practice.area,indNum, results) %>% group_by(program, country,indNum) %>%
+  summarize(total=sum(results, na.rm=TRUE)) %>% filter(program!="") %>% spread(indNum,total) %>% data.frame()
+```
+
+##indicator results per project/indicator & by country & by PERIOD
+```{r}
+## indicator results per project/indicator & by country. Indicators across columns (wide format)
+indicatorResults2<-sf17 %>% filter(indDis=="a. Country" & indDisValue=="a. Total") %>%
+  select(program, country,period,practice.area,indNum, results) %>% group_by(program, country,period,indNum) %>%
+  summarize(total=sum(results, na.rm=TRUE)) %>% filter(program!="") %>% spread(indNum,total) %>% data.frame()
+```
+
+##Data quality tests 1-8 plus a new one -> number of leaders should be at least as number of youth
+# These tests only look at program and country, NOT reporting period, because we're interested in
+# annual figures, not quarterly
+# (1 = fail, 0 = pass)
+```{r}
+# replace all missing values with zero
+indicatorResults3 <- indicatorResults3 %>% replace(is.na(.),0)
+
+## TEST 1  1.A >=1.B
+#(possible that some results for 1.B were for Fy17 participants, in which case, 1.B could be greater than 1.A)
+test1<-indicatorResults3 %>% mutate(test1 = ifelse((X1.A - X1.B < 0),1,0))%>% select(program,country,X1.A,X1.B,test1)
+
+## TEST 2 1.C is larger than 1.A (1.C <= 1.A)
+#1.C Nbr youth who engage in community improvement activities...
+test2 <- indicatorResults3 %>% mutate(test2 = ifelse((X1.A - X1.C < 0),1,0)) %>% select(program,country,X1.A,X1.C, test2)
+
+##TEST3 (2.A >= 2.B) 2.B should not be larger than 2.A
+#2.B br leaders applying new/enhanced skills...
+test3 <- indicatorResults3 %>% mutate(test3 = ifelse((X2.A - X2.B < 0),1,0)) %>% select(program,country,X2.A,X2.B, test3)
+
+## TEST 4 (2.A >= 2.C)
+#2.C Nbr leaders who grow or strengthen their professional networks...
+test4 <- indicatorResults3 %>% mutate(test4 = ifelse((X2.A - X2.C < 0),1,0)) %>% select(program,country,X2.A,X2.C, test4)
+
+##TEST 5 (3.B<=3.A) 3.B should not be bigger than 3.A 
+#3.B Nbr institutions that demonstrate improved capacity
+test5 <- indicatorResults3 %>% mutate(test5 = ifelse((X3.A - X3.B < 0),1,0))%>% select(program,country,X3.A,X3.B,test5)
+
+##TEST 6 (3.A = 2.A) >= 4.B
+test6 <- indicatorResults3 %>% mutate(test6 = ifelse((((X3.A + X2.A) - X4.B) < 0),1,0)) %>% select(program, country, X3.A,X2.A,X4.B,test6)
+
+## TEST 7 (3.B + 2.B) >= 4.E
+test7 <- indicatorResults3 %>% mutate(test7 = ifelse((((X3.B + X2.B) - X4.E) < 0),1,0)) %>% select(program, country, X3.B,X2.B,X4.E,test7)
+
+## TEST 8 2.A >=4.C
+test8 <- indicatorResults3 %>% mutate(test8 = ifelse((X2.A - X4.C < 0),1,0)) %>% select(program, country, X2.A,X4.C,test8) 
+
+## TEST ? (2.A >= 1.A) There should be at least as many leaders as there are youth dir ben
+testNEW<-indicatorResults3 %>% mutate(testNEW = ifelse((X2.A - X1.A < 0),1,0)) %>% select(program,country,X2.A,X1.A,testNEW)
+```
+
+#Use reduce function from purrr package to combine all test data frames
+```{r}
+test1to8 <- list(test1,test2,test3,test4,test5,test6,test7,test8,testNEW) %>%
+  reduce(left_join, by = c("program","country")) %>% select(program, country,test1,test2,test3,test4,test5,test6,test7,test8,testNEW)
+```
+
+#summarize test results by project
+```{r}
+#gather test columns, group/summarize by project, spread
+test1to8summary <- test1to8 %>% gather("tests","failed",3:11) %>%
+  group_by(program, tests) %>% summarize(fails = sum(failed, na.rm = TRUE)) %>%
+  mutate(fails = ifelse(fails>0,1,0)) %>% spread(tests,fails)
+
+
+test1to8summary <- test1to8 %>% group_by(program,test1,test2,test3,test4,test5,test6,test7,test8,testNEW) %>% summarize()
+```
+
+
+## Same data quality tests 1-8 but with data all the way down to the reporting period
+# (1 = fail, 0 = pass)
+```{r}
+# replace all missing values with zero
+indicatorResults2 <- indicatorResults2 %>% replace(is.na(.),0)
+
+## TEST 1  1.A >=1.B
+#(possible that some results for 1.B were for Fy17 participants, in which case, 1.B could be greater than 1.A)
+test1b<-indicatorResults2 %>% mutate(test1 = ifelse((X1.A - X1.B < 0),1,0))%>% select(program,period, country,X1.A,X1.B,test1)
+
+## TEST 2 1.C is larger than 1.A (1.C <= 1.A)
+#1.C Nbr youth who engage in community improvement activities...
+test2b <- indicatorResults2 %>% mutate(test2 = ifelse((X1.A - X1.C < 0),1,0)) %>% select(program,period,country,X1.A,X1.C, test2)
+
+##TEST3 (2.A >= 2.B) 2.B should not be larger than 2.A
+#2.B br leaders applying new/enhanced skills...
+test3b <- indicatorResults2 %>% mutate(test3 = ifelse((X2.A - X2.B < 0),1,0)) %>% select(program,period,country,X2.A,X2.B, test3)
+
+## TEST 4 (2.A >= 2.C)
+#2.C Nbr leaders who grow or strengthen their professional networks...
+test4b <- indicatorResults2 %>% mutate(test4 = ifelse((X2.A - X2.C < 0),1,0)) %>% select(program,period,country,X2.A,X2.C, test4)
+
+##TEST 5 (3.B<=3.A) 3.B should not be bigger than 3.A 
+#3.B Nbr institutions that demonstrate improved capacity
+test5b <- indicatorResults2 %>% mutate(test5 = ifelse((X3.A - X3.B < 0),1,0))%>% select(program,period,country,X3.A,X3.B,test5)
+
+##TEST 6 (3.A = 2.A) >= 4.B
+test6b <- indicatorResults2 %>% mutate(test6 = ifelse((((X3.A + X2.A) - X4.B) < 0),1,0)) %>% select(program,period, country, X3.A,X2.A,X4.B,test6)
+
+## TEST 7 (3.B + 2.B) >= 4.E
+test7b <- indicatorResults2 %>% mutate(test7 = ifelse((((X3.B + X2.B) - X4.E) < 0),1,0)) %>% select(program,period, country, X3.B,X2.B,X4.E,test7)
+
+## TEST 8 2.A >=4.C
+test8b <- indicatorResults2 %>% mutate(test8 = ifelse((X2.A - X4.C < 0),1,0)) %>% select(program,period, country, X2.A,X4.C,test8) 
+
+## TEST ? (2.A >= 1.A) There should be at least as many leaders as there are youth dir ben
+testNEWb<-indicatorResults2 %>% mutate(testNEW = ifelse((X2.A - X1.A < 0),1,0)) %>% select(program,period,country,X2.A,X1.A,testNEW)
+```
+
+#Use reduce function from purrr package to combine all test data frames
+```{r}
+test1to8b <- list(test1b,test2b,test3b,test4b,test5b,test6b,test7b,test8b,testNEWb) %>%
+  reduce(left_join, by = c("program","country","period")) %>% select(program,period, country,test1,test2,test3,test4,test5,test6,test7,test8,testNEW)
+```
+#--------------------------------------------------------------------------------
+
+## Create a disaggregation summary that shows overall disaggregation totals
+```{r}
+#Summarize results across program, reporting period, country for a. Total and number assessed
+Disag <- sf17 %>% select(program, practice.area, period, country,indNum,indName,indDis,indDisValue,results) %>% replace(is.na(.),0) %>%
+  filter(indDisValue %in% c("a. Total","b. Number of beneficiaries the program collected data on")) %>%  group_by(program,period,country,indNum,indName,indDisValue) %>%
+  summarize(Number=sum(results,na.rm=TRUE)) %>% data.frame() %>% spread(indDisValue,Number)
+
+    
+#Summarize results across program, reporting period, country for each disaggregation category (record type)
+disagTotal<-sf17 %>% select(program, practice.area, period, country,indNum,indName,indDis,indDisValue,results) %>% replace(is.na(.),0) %>%
+  group_by(program,period,country,indNum,indName,indDis) %>%
+  summarize(Number=sum(results,na.rm=TRUE)) %>% data.frame() %>% spread(indDis,Number) %>% select(-6)
+
+#append Disag with disaggregation totals: program, country, period,and results by disag category
+disagReports3<-left_join(Disag,disagTotal,by=c("program", "period", "country", "indNum", "indName")) %>% select(c(1:5,21,6:20))
+```
+
+##Disaggregation tests (1 = fail, 0 = pass)
+```{r}
+## replace mising values with zeroes
+disagReports3 <- disagReports3 %>% replace(is.na(.),0)
+
+#Missing gender disaggregation data (NO GENDER DISAGREGATION)
+NoGenderDisag <- disagReports3 %>% filter(indNum %in% c("1.A","1.B","1.C","2.A","2.B","2.C")) %>%
+  mutate(DQgender = ifelse(`a. Total` - `b. Gender` != `a. Total`,1,0))
+
+#Incorrect data. Gender disaggregation data is greater than total
+DQgender <- disagReports3 %>% filter(indNum %in% c("1.A","1.B","1.C","2.A","2.B","2.C")) %>%
+  mutate(DQgender = ifelse(`a. Total` - `b. Gender` < 0,1,0)) %>% select(c(1:5),`a. Total`,`b. Gender`,DQgender)
+
+# number of leaders should equal total overall
+DQleader <- disagReports3 %>% filter(indNum %in% c("2.A","2.B","2.C")) %>%
+  mutate(DQleader = ifelse(`a. Total` - `k. Leader Type` != 0,1,0)) %>%
+  select(c(1:5),program,`a. Total`,`k. Leader Type`, DQleader)
+
+#proportional test. Total number surveyed/assessed should either be more than total overall or equal to total overall
+DQprops <- disagReports3 %>% filter(indNum %in% c("1.B","1.C","2.B","2.C","3.B","4.C","4.E")) %>%
+  mutate(DQprops = ifelse(`a. Total` - `b. Number of beneficiaries the program collected data on` > 0,1,
+                          ifelse(`a. Total` - `b. Number of beneficiaries the program collected data on`== `a. Total`,1,0)
+                          )
+         ) %>% select(c(1:5),program,`a. Total`,`b. Number of beneficiaries the program collected data on`,DQprops)
+
+# Length of intervention test
+DQlength <- disagReports3 %>% filter(indNum %in% c("1.B","1.C","2.A")) %>%
+  mutate(DQlength = ifelse(`a. Total` - `h. Length of intervention` < 0,1,
+                           ifelse(`a. Total` - `h. Length of intervention` == `a. Total`,1,0))) %>%
+  select(c(1:5), program, `a. Total`,`h. Length of intervention`,DQlength)
+```
+
+#Use reduce function from purrr package to combine all DISAGGREGATION tests data frames
+```{r}
+test11to15 <- list(DQgender,DQleader,DQprops,DQlength) %>%
+  reduce(left_join, by = c("program","country","period")) %>% select(program, country,period,DQgender,DQleader,DQprops,DQlength)
+```
+
+#summarize test results by project
+```{r}
+#gather test columns, group/summarize by project, spread
+test11to15summary <- test11to15 %>% gather("tests","failed",4:7) %>%
+  group_by(program, tests) %>% summarize(fails = sum(failed, na.rm = TRUE)) %>%
+  mutate(fails = ifelse(fails>0,1,0)) %>% spread(tests,fails)
+
+test11to15summary <- test11to15 %>% group_by(program,DQgender,DQleader,DQprops,DQlength) %>% summarize()
+```
+
+#combine all tests at the project level and add Total failed tests column
+```{r}
+combinedTests <- full_join(test1to8summary,test11to15summary,by = "program") %>%
+  data.frame() %>% mutate(totalFails = rowSums(.[,2:14], na.rm = TRUE))
+```
+
+#Summary tables with actual results + tests
+# join summary test table with summary results table
+#gather tests so that you can filter by test
+```{r}
+test1to8all <- left_join(indicatorResults2,test1to8b, by = c("program","country","period")) %>%
+  gather("tests","fails",25:33)
+
+test11to15all <- left_join(disagReports3, test11to15, by = c("program","country","period")) %>%
+  gather("tests","fails",22:25)
+```
+
+
+# export results
+```{r}
+test1to8b <- write.csv(test1to8b, "test1to8b.csv")
+test11to15 <- write.csv(test11to15, "test11to15.csv")
+combinedTests <- write.csv(combinedTests, "combinedTests.csv")
+test11to15all <- write.csv(test11to15all, "test11to15all.csv")
+test1to8all <- write.csv(test1to8all, "test1to8all.csv")
+```
+
+
+
