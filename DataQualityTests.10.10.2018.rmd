@@ -17,9 +17,9 @@ knitr::opts_chunk$set(
 library(tidyverse)
 
 ## Read in data
-sf <- read.csv("C:/Users/cguedenet/OneDrive - International Research and Exchanges Board/IREX Global Measurement/FY18.Q4/sfdata10.5.csv", header = TRUE)   # indicator results
+sf <- read.csv("C:/Users/cguedenet/OneDrive - International Research and Exchanges Board/IREX Global Measurement/FY18.Q4/sfdata10.11.csv", header = TRUE)   # indicator results
 
-proj <- read.csv("active.proj.csv")            # active projects
+proj <- read.csv("C:/Users/cguedenet/OneDrive - International Research and Exchanges Board/IREX Global Measurement/FY18.Q4/active.proj.csv")            # active projects
 list2 <- c("code","program","practice.area")
 names(proj) <- list2
 proj <- proj[1:3]
@@ -33,6 +33,8 @@ sf<-sf %>% filter(program!="" & results>0)
 
 #join active programs data frane to indicator results data frame
 sf <- left_join(sf,proj,by="program") # add variables from proj data frame to sf data frame
+
+sf17 <- sf
 
 write.csv(sf,"sfpower.csv")
 ```
@@ -255,11 +257,43 @@ test11to15all <- left_join(disagReports3, test11to15, by = c("program","country"
 
 # export results
 ```{r}
+## export each dataframe individually
 test1to8b <- write.csv(test1to8b, "test1to8b.csv")
 test11to15 <- write.csv(test11to15, "test11to15.csv")
 combinedTests <- write.csv(combinedTests, "combinedTests.csv")
 test11to15all <- write.csv(test11to15all, "test11to15all.csv")
 test1to8all <- write.csv(test1to8all, "test1to8all.csv")
+
+#RAPleader <- DQleader %>% filter(program == "Regional Assistance Program (RAP) MENA")
+#RAPprops <- DQprops %>% filter(program == "Regional Assistance Program (RAP) MENA")
+#RAPdisag <- disagReports3 %>% filter(program == "Regional Assistance Program (RAP) MENA") %>%
+  #select(c(1:5,7,8,9,19))
+
+## Export all dataframes into one Excel workbook
+library(openxlsx)
+list_of_datasets <- list("combinedTests" = combinedTests, "test1to8b" = test1to8b, "test11to15" = test11to15, "test11to15all" = test11to15all,"test1to8all" = test1to8all )
+
+write.xlsx(list_of_datasets, file = "DQchecks10.11.2018.xlsx")
+
+```
+
+# print results for specific program
+```{r}
+DZ <- disagReports3 %>% filter(program == "Data Zetu")
+DZ2 <- indicatorResults2 %>% filter(program == "Data Zetu")
+
+write.csv(DZ, "DZ.csv")
+write.csv(DZ2, "DZ2.csv")
+```
+
+
+# DQ props - subtract Total from total assessed to see who biggest "offenders" are
+```{r}
+DQpropsCheck <- DQprops %>% mutate(difference = `a. Total` - `b. Number of beneficiaries the program collected data on`) %>% group_by(program, indNum, indName, DQprops) %>% summarize(Total = sum(`a. Total`, na.rm = TRUE),
+                                                                                                                                                                              Surveyed = sum(`b. Number of beneficiaries the program collected data on`, na.rm = TRUE),
+                                                                                                                                                                              Difference = sum(difference, na.rm = TRUE))
+
+
 ```
 
 
