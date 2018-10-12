@@ -227,14 +227,21 @@ test11to15 <- list(DQgender,DQleader,DQprops,DQlength) %>%
   reduce(left_join, by = c("program","country","period")) %>% select(program, country,period,DQgender,DQleader,DQprops,DQlength)
 ```
 
-#summarize test results by project
+#Two coding ways to summarize tests 11 to 15 by project
+# fail = 1, pass = 0
 ```{r}
-#gather test columns, group/summarize by project, spread
-test11to15summary <- test11to15 %>% gather("tests","failed",4:7) %>%
-  group_by(program, tests) %>% summarize(fails = sum(failed, na.rm = TRUE)) %>%
-  mutate(fails = ifelse(fails>0,1,0)) %>% spread(tests,fails)
+#Slightly longer code - gather test columns, group/summarize by project, spread
 
-test11to15summary <- test11to15 %>% group_by(program,DQgender,DQleader,DQprops,DQlength) %>% summarize()
+#test11to15summary <- test11to15 %>% gather("tests","failed",4:7) %>%
+ # group_by(program, tests) %>% summarize(fails = sum(failed, na.rm = TRUE)) %>%
+  #mutate(fails = ifelse(fails>0,1,0)) %>% spread(tests,fails)
+
+# using mutate_at function
+test11to15summary <- test11to15 %>% group_by(program) %>%
+  summarize_at(c("DQgender", "DQleader", "DQprops", "DQlength"), sum, na.rm = TRUE) %>%
+  mutate_at(c("DQgender", "DQleader", "DQprops", "DQlength"), funs(ifelse(.>0,1,0)))
+
+
 ```
 
 #combine all tests at the project level and add Total failed tests column
@@ -293,8 +300,18 @@ DQpropsCheck <- DQprops %>% mutate(difference = `a. Total` - `b. Number of benef
                                                                                                                                                                               Surveyed = sum(`b. Number of beneficiaries the program collected data on`, na.rm = TRUE),
                                                                                                                                                                               Difference = sum(difference, na.rm = TRUE))
 
-
+write.csv(DQpropsCheck, "DQpropsCheck.csv")
 ```
 
 
+# DQleaders - subtract Total from Leader Type disaggregation totalto see who biggest "offenders" are
+```{r}
+DQleaderscheck <- DQleader %>% mutate(difference = `a. Total` - `k. Leader Type`) %>%
+  group_by(program, indNum, indName, DQleader) %>%
+  summarize(Total = sum(`a. Total`, na.rm = TRUE),
+            LeaderType = sum(`k. Leader Type`, na.rm = TRUE),
+            Difference = sum(difference, na.rm = TRUE))
+
+write.csv(DQleaderscheck, "DQleaderscheck.csv")
+```
 
